@@ -1,0 +1,13 @@
+# ADR 001: local runner, durable sample, static reports
+
+Decision: Node 24 LTS, strict TypeScript, npm lockfile; minimal Node HTTP services; Zod validation; pg for real PostgreSQL. Compare a framework/queue stack with built-in HTTP plus a database job table: select the latter to keep transaction boundaries visible and dependencies small. Node 24 LTS confirmed in current Node release documentation. No Docker assumption in the engine; Compose is a convenience for the sample database.
+
+Engine: select declarative JSON events/deliveries plus a read-only HTTP JSON assertion adapter over executable scenario plugins. This makes bounds inspectable, reproducible and safe to serialize. An assertion reads `{status, fulfilmentCount}` and polls to a deadline; invalid adapters and missing assertions are errors. No custom arbitrary code is loaded by the runner. Planned offsets/seed are recorded separately from observed timestamps. Retried transport failures do not establish business correctness.
+
+Sample: select persistent inbox/jobs and transactional order/fulfilment updates over in-memory deduplication and timers. Corrected ingress validates HMAC on raw bytes, order association, integer amount and currency; a database worker locks jobs and orders and atomically commits the business change and completion record. Broken mode intentionally commits a fulfilment on each successful delivery. Monotonic state machine: awaiting -> paid; pending may leave awaiting unchanged but never regress paid. Local fulfilment is a ledger record; external fulfilment would need destination idempotency or reconciliation.
+
+Crash testing: owned worker child with explicit IPC checkpoint signals, over a remotely callable kill endpoint. Harness interrupts only its own child and restarts against the same job table. Transaction rollback before commit and durable completion after commit are verified. Server binds loopback; failure injection exists only in explicitly enabled synthetic sample fixtures.
+
+Reports: select versioned JSON, static escaped HTML and small JUnit XML over a web application/backend. Static report viewing needs no running service or account. No payloads, signing secrets, URL queries or credential values belong in reports. Report UI shows delivery and business outcomes separately, including partial/error states.
+
+Testing: Node test runner via tsx, real PostgreSQL integration, Playwright using system Chromium when present. Isolated random database schemas prevent tests clobbering other runs. Bounds: <=100 events, <=500 planned deliveries, <=16 concurrent requests, <=5 attempts each, <=60 seconds a run, <=64 KiB payload, no redirects. Cleanup only resources created by the harness.

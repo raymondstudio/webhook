@@ -1,0 +1,7 @@
+# Release preparation and adoption
+
+Before a tagged release, run the README journey from a clean checkout with real PostgreSQL, all checks and a separate external adapter. Confirm broken-case failures and both crash boundaries. Review dependency advisories, generated report fields, ownership cleanup and network rules. Inspect the independent review and measurements in checkpoint/docs. Check PR CI after publishing a branch; a configured workflow is not a green run.
+
+Review the MIT licence ownership and preserve dependency licences. No package or release is published by this task; package.json is private. Human maintainer review is recommended before expanding scope. Provider-specific adapters, hosted demos, packaging and external side-effect guarantees are separate work. Keep hosted demos fixed to synthetic owned targets if later requested; do not offer public arbitrary URLs.
+
+Adoption experiment (not executed): ask consenting developers to run the quickstart, connect their own disposable handler, intentionally introduce duplicate fulfilment, and inspect a corrected result without assistance. Observe whether they can choose a meaningful assertion and explain the report. Ask: what blocked setup; did business evidence reveal a bug HTTP status hid; could they add this to CI; what workflow already solves it; would they use it again? Record failures and time-to-first-meaningful-result with consent. No contacts, users, demand, performance claims or adoption results are fabricated here.

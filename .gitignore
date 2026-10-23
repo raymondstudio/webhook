@@ -34,3 +34,11 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Local run artifacts
+/reports/
+/dist/
+/test-results/
+/playwright-report/
+/.data/
+*.log

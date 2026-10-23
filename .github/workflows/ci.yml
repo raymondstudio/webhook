@@ -1,0 +1,60 @@
+name: Verify webhook outcomes
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17@sha256:b8faeff7712663c2773a190181e1246e37e364b887611c04658c28b44e2408fe
+        env:
+          POSTGRES_USER: lab
+          POSTGRES_PASSWORD: lab
+          POSTGRES_DB: lab
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U lab -d lab"
+          --health-interval 2s --health-timeout 5s --health-retries 20
+    env:
+      DATABASE_URL: postgresql://lab:lab@127.0.0.1:5432/lab
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run test:integration
+      - run: npm run build
+      - run: node dist/src/cli.js --help
+      - run: npm run test:built
+      - run: npm run demo
+      - name: Prepare Chromium browser
+        run: |
+          if [ -x /usr/bin/chromium ]; then
+            /usr/bin/chromium --version
+          elif [ -x /usr/bin/google-chrome ]; then
+            /usr/bin/google-chrome --version
+          else
+            npx playwright install --with-deps chromium
+          fi
+      - run: npm run test:ui
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: webhook-lab-evidence
+          path: |
+            reports/
+            test-results/
+          if-no-files-found: ignore
+          retention-days: 7

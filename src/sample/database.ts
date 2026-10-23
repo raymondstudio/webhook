@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import pg from "pg";
+import { parseIntoClientConfig } from "pg-connection-string";
 
 export type Mode = "broken" | "corrected";
 
@@ -11,21 +12,43 @@ export function assertSchema(schema: string): void {
   if (!/^lab_[a-f0-9]{32}$/.test(schema)) throw new Error("Invalid owned sample schema");
 }
 
-export function scopedPool(databaseUrl: string, schema: string): pg.Pool {
-  assertSchema(schema);
-  return new pg.Pool({
-    connectionString: databaseUrl,
-    options: `-c search_path=${schema} -c statement_timeout=10000 -c lock_timeout=5000`,
+/**
+ * Parse once, preserving connection identity and TLS verification settings only.
+ * Never forward connectionString: pg reparses it after explicit config, allowing
+ * URI options/search_path/timeouts or nested connectionString to escape isolation.
+ * Caller startup options are deliberately ignored for every sample connection.
+ */
+export function samplePoolConfig(databaseUrl: string, schema?: string): pg.PoolConfig {
+  if (schema !== undefined) assertSchema(schema);
+  const parsed = parseIntoClientConfig(databaseUrl);
+  return {
+    host: parsed.host,
+    port: parsed.port,
+    user: parsed.user,
+    password: parsed.password,
+    database: parsed.database,
+    ssl: parsed.ssl,
+    sslnegotiation: parsed.sslnegotiation,
+    application_name: parsed.application_name,
+    // Admin statements are fully qualified; they never need a writable search_path.
+    options: `-c search_path=${schema ?? "pg_catalog"} -c statement_timeout=10000 -c lock_timeout=5000`,
+    statement_timeout: 10000,
+    lock_timeout: 5000,
     max: 8,
     connectionTimeoutMillis: 5000,
     idleTimeoutMillis: 1000,
-  });
+  };
+}
+
+export function scopedPool(databaseUrl: string, schema: string): pg.Pool {
+  assertSchema(schema);
+  return new pg.Pool(samplePoolConfig(databaseUrl, schema));
 }
 
 /** A new random schema is a disposable migration target; existing schemas are never reused. */
 export async function migrate(databaseUrl: string, schema: string, mode: Mode): Promise<pg.Pool> {
   assertSchema(schema);
-  const admin = new pg.Pool({ connectionString: databaseUrl, connectionTimeoutMillis: 5000 });
+  const admin = new pg.Pool(samplePoolConfig(databaseUrl));
   try {
     await admin.query(`CREATE SCHEMA ${schema}`);
   } finally {
@@ -69,7 +92,7 @@ export async function migrate(databaseUrl: string, schema: string, mode: Mode): 
 
 export async function dropSchema(databaseUrl: string, schema: string): Promise<void> {
   assertSchema(schema);
-  const pool = new pg.Pool({ connectionString: databaseUrl, connectionTimeoutMillis: 5000 });
+  const pool = new pg.Pool(samplePoolConfig(databaseUrl));
   try {
     await pool.query(`DROP SCHEMA ${schema} CASCADE`);
   } finally {

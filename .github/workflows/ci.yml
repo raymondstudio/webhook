@@ -35,6 +35,7 @@ jobs:
       - run: npm run test:integration
       - run: npm run build
       - run: node dist/src/cli.js --help
+      - run: npm run test:built
       - run: npm run demo
       - run: npx playwright install --with-deps chromium
       - run: npm run test:ui

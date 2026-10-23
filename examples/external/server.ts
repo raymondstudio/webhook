@@ -100,8 +100,12 @@ export async function startExternal(options: {
         Object.keys(input).length !== 5 ||
         typeof input.id !== "string" ||
         !/^[A-Za-z0-9_.:-]{1,128}$/.test(input.id) ||
+        input.id === "." ||
+        input.id === ".." ||
         typeof input.orderId !== "string" ||
         !/^[A-Za-z0-9_.:-]{1,128}$/.test(input.orderId) ||
+        input.orderId === "." ||
+        input.orderId === ".." ||
         !["payment.succeeded", "payment.pending"].includes(String(input.type))
       ) {
         return reply(400, { error: "Invalid synthetic event" });
@@ -174,6 +178,8 @@ export async function startExternal(options: {
     createOrder(order) {
       if (
         !/^[A-Za-z0-9_.:-]{1,128}$/.test(order.id) ||
+        order.id === "." ||
+        order.id === ".." ||
         !Number.isSafeInteger(order.amount) ||
         order.amount <= 0 ||
         !/^[A-Z]{3}$/.test(order.currency)

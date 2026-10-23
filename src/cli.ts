@@ -2,7 +2,8 @@
 import { readFile, stat } from "node:fs/promises";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { parseConfig, runScenario } from "./engine/index.js";
+import { ConfigurationError, parseConfig, runScenario } from "./engine/index.js";
+import { NetworkPolicyError } from "./engine/network.js";
 import { writeReports } from "./report/index.js";
 
 const help = `Webhook Failure Lab 0.1.0\n\nUsage: webhook-lab run <scenario.json> --out <directory>\n\nSet the dedicated test signing secret through the scenario's signingSecretEnv\n(default LAB_SIGNING_SECRET). Never put secrets in the JSON file.\n\nExit codes: 0 business assertions passed; 1 business assertion mismatch;\n2 configuration, delivery, adapter or deadline error; 130 cancelled.\nSynthetic tests only; HTTP acknowledgement does not prove business success.\n`;
@@ -46,9 +47,11 @@ export async function main(args = process.argv.slice(2)): Promise<number> {
         : report.outcome === "cancelled"
           ? 130
           : 2;
-  } catch {
+  } catch (error) {
     console.error(
-      "Scenario execution or report writing failed. Check the configuration, endpoint policy, file permissions and --help.",
+      error instanceof ConfigurationError || error instanceof NetworkPolicyError
+        ? error.message
+        : "Scenario execution or report writing failed. Check the configuration, endpoint policy, file permissions and --help.",
     );
     return controller.signal.aborted ? 130 : 2;
   } finally {

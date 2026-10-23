@@ -131,6 +131,10 @@ test("corrected: distinct valid events and orders are not globally deduplicated"
 test("corrected: rejects signature, amount, currency, order association and conflicting identities without side effects", async () => {
   await sample("corrected", async (app) => {
     assert.equal((await post(app.baseUrl, event, { secret: "wrong-synthetic-key" })).status, 401);
+    for (const id of [".", ".."]) {
+      await assert.rejects(() => app.createOrder({ id, amount: 5000, currency: "NGN" }));
+      assert.equal((await post(app.baseUrl, { ...event, id })).status, 400);
+    }
     for (const invalid of [
       { ...event, amount: 4999 },
       { ...event, currency: "USD" },
@@ -264,6 +268,9 @@ test("separate file-backed application persists duplicate identity and read-only
 test("separate adapter treats prototype-shaped identifiers as stored data", async () => {
   const app = await startExternal({ secret });
   try {
+    for (const id of [".", ".."]) {
+      await assert.rejects(async () => app.createOrder({ id, amount: 5000, currency: "NGN" }));
+    }
     await app.createOrder({ id: "__proto__", amount: 5000, currency: "NGN" });
     const prototypeEvent: SyntheticEvent = { ...event, id: "__proto__", orderId: "__proto__" };
     for (let index = 0; index < 2; index++)
@@ -288,10 +295,9 @@ test("failed child termination retains schema, closes HTTP and permits a later c
         "SELECT nspname FROM pg_namespace WHERE nspname LIKE 'lab_%'",
       )
     ).rows.map((row) => row.nspname);
-  const before = new Set(await schemas());
   const app = await startSample({ databaseUrl, mode: "corrected", secret });
-  const ownedSchema = (await schemas()).find((name) => !before.has(name));
-  assert.ok(ownedSchema, "sample created a new disposable schema");
+  const ownedSchema = app.schemaName;
+  assert.match(ownedSchema, /^lab_[a-f0-9]{32}$/);
   const actualKill = ChildProcess.prototype.kill;
   ChildProcess.prototype.kill = () => false; // Exercise a real worker whose signal could not be sent.
   try {
@@ -323,4 +329,106 @@ test("failed child termination retains schema, closes HTTP and permits a later c
       await inspector.end();
     }
   }
+});
+
+test("database URI startup options cannot escape the owned schema or override required bounds", async () => {
+  const { default: pg } = await import("pg");
+  const { newSchema, samplePoolConfig, scopedPool } = await import("../../src/sample/database.js");
+  const decoy = newSchema();
+  const inspector = new pg.Pool(samplePoolConfig(databaseUrl));
+  const escapedUrl = new URL(databaseUrl);
+  escapedUrl.searchParams.set(
+    "options",
+    `-c search_path=${decoy} -c statement_timeout=0 -c lock_timeout=0`,
+  );
+  escapedUrl.searchParams.set("search_path", decoy);
+  escapedUrl.searchParams.set("statement_timeout", "0");
+  escapedUrl.searchParams.set("lock_timeout", "0");
+  escapedUrl.searchParams.set("connectionTimeoutMillis", "0");
+  escapedUrl.searchParams.set("connectionString", "postgresql://unused:unused@127.0.0.1:1/unused");
+  let app: SampleHandle | undefined;
+  let decoyCreated = false;
+  try {
+    await inspector.query(`CREATE SCHEMA ${decoy}`);
+    decoyCreated = true;
+    await inspector.query(`CREATE TABLE ${decoy}.sentinel(value text NOT NULL)`);
+    await inspector.query(`INSERT INTO ${decoy}.sentinel(value) VALUES('unchanged')`);
+    app = await startSample({ databaseUrl: escapedUrl.href, mode: "corrected", secret });
+    const sampleSchema = app.schemaName;
+    assert.notEqual(sampleSchema, decoy);
+    const tables = async (schema: string) =>
+      (
+        await inspector.query<{ tablename: string }>(
+          "SELECT tablename FROM pg_tables WHERE schemaname=$1 ORDER BY tablename",
+          [schema],
+        )
+      ).rows.map((row) => row.tablename);
+    assert.deepEqual(await tables(sampleSchema), ["fulfilments", "inbox", "jobs", "orders"]);
+    assert.deepEqual(await tables(decoy), ["sentinel"]);
+    const scoped = scopedPool(escapedUrl.href, sampleSchema);
+    try {
+      const settings = await scoped.query<{ schema: string; statement: string; lock: string }>(
+        "SELECT current_schema() AS schema, current_setting('statement_timeout') AS statement, current_setting('lock_timeout') AS lock",
+      );
+      assert.deepEqual(settings.rows[0], { schema: sampleSchema, statement: "10s", lock: "5s" });
+    } finally {
+      await scoped.end();
+    }
+    await app.createOrder({ id: event.orderId, amount: event.amount, currency: event.currency });
+    assert.equal((await post(app.baseUrl)).status, 200);
+    await app.waitForIdle();
+    assert.deepEqual(await app.inspect(event.orderId), { status: "paid", fulfilmentCount: 1 });
+    await app.close();
+    app = undefined;
+    assert.deepEqual(await tables(sampleSchema), []);
+    assert.deepEqual(await tables(decoy), ["sentinel"]);
+    assert.deepEqual((await inspector.query(`SELECT value FROM ${decoy}.sentinel`)).rows, [
+      { value: "unchanged" },
+    ]);
+  } finally {
+    try {
+      await app?.close();
+      // Only a schema whose successful creation was observed belongs to this test.
+      if (decoyCreated) await inspector.query(`DROP SCHEMA ${decoy} CASCADE`);
+    } finally {
+      await inspector.end();
+    }
+  }
+});
+
+test("sanitized database config preserves TLS identity while ignoring connection/query overrides", async () => {
+  const { newSchema, samplePoolConfig } = await import("../../src/sample/database.js");
+  const schema = newSchema();
+  const config = samplePoolConfig(
+    "postgresql://test-user:test-password@db.example:6432/test-db?sslmode=verify-full&sslnegotiation=direct&application_name=lab-test&options=-c%20search_path%3Dother&connectionString=postgresql%3A%2F%2Funused%2Funused&statement_timeout=0&lock_timeout=0&connectionTimeoutMillis=0&query_timeout=0",
+    schema,
+  );
+  assert.equal(config.connectionString, undefined);
+  assert.equal(config.host, "db.example");
+  assert.equal(config.port, 6432);
+  assert.equal(config.user, "test-user");
+  assert.equal(config.password, "test-password");
+  assert.equal(config.database, "test-db");
+  assert.ok(typeof config.ssl === "object" && config.ssl !== null);
+  // verify-full enables TLS with Node's default certificate and hostname checks.
+  assert.deepEqual(Object.keys(config.ssl), []);
+  assert.equal(config.sslnegotiation, "direct");
+  assert.equal(config.application_name, "lab-test");
+  assert.equal(config.connectionTimeoutMillis, 5000);
+  assert.equal(config.statement_timeout, 10000);
+  assert.equal(config.lock_timeout, 5000);
+  assert.equal(config.query_timeout, undefined);
+  assert.equal(
+    config.options,
+    `-c search_path=${schema} -c statement_timeout=10000 -c lock_timeout=5000`,
+  );
+  assert.equal(config.sslnegotiation, "direct");
+  assert.ok(
+    typeof config.ssl === "object" &&
+      config.ssl !== null &&
+      config.ssl.rejectUnauthorized !== false,
+  );
+  const plaintext = samplePoolConfig("postgresql://test-user@db.example/test-db?sslmode=disable");
+  assert.equal(plaintext.ssl, false);
+  assert.match(plaintext.options ?? "", /search_path=pg_catalog/);
 });

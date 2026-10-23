@@ -23,10 +23,12 @@
     "demo": "tsx scripts/demo.ts",
     "benchmark": "tsx scripts/benchmark.ts",
     "db:up": "bash scripts/database.sh up",
-    "db:down": "bash scripts/database.sh down"
+    "db:down": "bash scripts/database.sh down",
+    "test:built": "node --test dist/test/integration/journey.test.js"
   },
   "dependencies": {
     "pg": "8.23.1",
+    "pg-connection-string": "2.14.1",
     "zod": "4.6.7"
   },
   "devDependencies": {

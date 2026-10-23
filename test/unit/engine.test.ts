@@ -69,6 +69,10 @@ test("configuration rejects missing assertions, unsupported fields and excessive
     { version: 2 },
     { events: [{ ...fixture().events[0], secret: "should-not-be-accepted" }] },
     { events: [{ ...fixture().events[0], amount: 1.1 }] },
+    { events: [{ ...fixture().events[0], orderId: "." }] },
+    { events: [{ ...fixture().events[0], orderId: ".." }] },
+    { events: [{ ...fixture().events[0], id: "." }] },
+    { deliveries: [{ eventId: "..", atMs: 0 }] },
   ])
     assert.throws(() => parseConfig({ ...fixture(), ...patch }));
 });

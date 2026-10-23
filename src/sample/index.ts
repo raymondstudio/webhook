@@ -12,7 +12,8 @@ const identifier = z
   .string()
   .min(1)
   .max(128)
-  .regex(/^[A-Za-z0-9_.:-]+$/);
+  .regex(/^[A-Za-z0-9_.:-]+$/)
+  .refine((value) => value !== "." && value !== "..");
 const money = z.number().int().positive().max(Number.MAX_SAFE_INTEGER);
 const currency = z.string().regex(/^[A-Z]{3}$/);
 const orderSchema = z.object({ id: identifier, amount: money, currency }).strict();
@@ -33,6 +34,8 @@ export interface SampleOptions {
   enableFaults?: boolean;
 }
 export interface SampleHandle {
+  /** Local harness ownership evidence; never exposed by an HTTP endpoint. */
+  readonly schemaName: string;
   baseUrl: string;
   createOrder(order: { id: string; amount: number; currency: string }): Promise<void>;
   inspect(orderId: string): Promise<BusinessState>;
@@ -376,6 +379,7 @@ export async function startSample(options: SampleOptions): Promise<SampleHandle>
     throw new Error("Sample has no local address");
   }
   return {
+    schemaName: schema,
     baseUrl: `http://127.0.0.1:${address.port}`,
     async createOrder(order) {
       const parsed = orderSchema.parse(order);

@@ -6,7 +6,8 @@ const identifier = z
   .string()
   .min(1)
   .max(128)
-  .regex(/^[A-Za-z0-9_.:-]+$/);
+  .regex(/^[A-Za-z0-9_.:-]+$/)
+  .refine((value) => value !== "." && value !== "..");
 const event = z.strictObject({
   id: identifier,
   type: z.enum(["payment.succeeded", "payment.pending"]),

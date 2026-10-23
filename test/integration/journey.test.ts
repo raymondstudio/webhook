@@ -49,7 +49,15 @@ test("CLI runs against a separately configured application and emits real report
       new Promise<{ code: number | null; output: string }>((resolve, reject) => {
         const child = spawn(
           process.execPath,
-          ["--import", "tsx", "src/cli.ts", "run", file, "--out", dir],
+          [
+            ...(import.meta.url.endsWith(".js")
+              ? ["dist/src/cli.js"]
+              : ["--import", "tsx", "src/cli.ts"]),
+            "run",
+            file,
+            "--out",
+            dir,
+          ],
           {
             cwd: process.cwd(),
             env: { ...process.env, LAB_SIGNING_SECRET: secret },

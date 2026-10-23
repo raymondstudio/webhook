@@ -1,0 +1,33 @@
+{
+  "version": 1,
+  "name": "Separate application: duplicate notification",
+  "seed": "external-example-v1",
+  "target": "http://127.0.0.1:7100/payment-events",
+  "allowedOrigins": [],
+  "signingSecretEnv": "TEST_SIGNING_SECRET",
+  "events": [
+    {
+      "id": "external-event",
+      "type": "payment.succeeded",
+      "orderId": "demo-order",
+      "amount": 5000,
+      "currency": "NGN"
+    }
+  ],
+  "deliveries": [
+    { "eventId": "external-event", "atMs": 0 },
+    { "eventId": "external-event", "atMs": 50 }
+  ],
+  "assertions": [
+    {
+      "name": "One fulfilment",
+      "url": "http://127.0.0.1:7100/test-state/demo-order",
+      "expected": { "status": "paid", "fulfilmentCount": 1 },
+      "settleMs": 100
+    }
+  ],
+  "concurrency": 2,
+  "requestTimeoutMs": 500,
+  "deadlineMs": 5000,
+  "retry": { "maxAttempts": 2, "delayMs": 25 }
+}

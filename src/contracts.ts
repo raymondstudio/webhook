@@ -75,4 +75,7 @@ export interface RunReport {
   errors: string[];
   limitations: string[];
 }
-export interface RunOptions { secret?: string; signal?: AbortSignal }
+export interface RunOptions {
+  secret?: string;
+  signal?: AbortSignal;
+}

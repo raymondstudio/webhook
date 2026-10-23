@@ -39,7 +39,15 @@ jobs:
       - run: node dist/src/cli.js --help
       - run: npm run test:built
       - run: npm run demo
-      - run: npx playwright install --with-deps chromium
+      - name: Prepare Chromium browser
+        run: |
+          if [ -x /usr/bin/chromium ]; then
+            /usr/bin/chromium --version
+          elif [ -x /usr/bin/google-chrome ]; then
+            /usr/bin/google-chrome --version
+          else
+            npx playwright install --with-deps chromium
+          fi
       - run: npm run test:ui
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         if: always()

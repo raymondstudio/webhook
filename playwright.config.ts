@@ -1,9 +1,14 @@
-import { existsSync } from "node:fs";
+import { accessSync, constants } from "node:fs";
 import { defineConfig } from "@playwright/test";
 
-const systemBrowser = ["/usr/bin/chromium", "/usr/bin/google-chrome"].find((file) =>
-  existsSync(file),
-);
+const systemBrowser = ["/usr/bin/chromium", "/usr/bin/google-chrome"].find((file) => {
+  try {
+    accessSync(file, constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
+});
 
 export default defineConfig({
   testDir: "./test/ui",

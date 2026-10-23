@@ -102,6 +102,9 @@ export async function startSample(options: SampleOptions): Promise<SampleHandle>
   let worker: ChildProcess | undefined;
   let workerFailed = false;
   let closing = false;
+  let closed = false;
+  let closeInProgress: Promise<void> | undefined;
+  let poolEnded = false;
   let lastCheckpoint: { checkpoint: Checkpoint; eventId: string } | undefined;
   const faulted = new Set<string>();
 
@@ -324,19 +327,32 @@ export async function startSample(options: SampleOptions): Promise<SampleHandle>
     }
   }
 
-  async function close(): Promise<void> {
-    if (closing) return;
+  function close(): Promise<void> {
+    if (closed) return Promise.resolve();
+    if (closeInProgress) return closeInProgress;
+    // Closing remains true after a failure: HTTP work and worker restarts stay disabled,
+    // but cleanup itself can be retried once the owned child's state is known.
     closing = true;
-    await stopWorker();
-    if (server.listening) {
-      const closed = new Promise<void>((resolve, reject) =>
-        server.close((error) => (error ? reject(error) : resolve())),
-      );
-      server.closeAllConnections();
-      await closed;
-    }
-    await pool.end();
-    await dropSchema(options.databaseUrl, schema);
+    closeInProgress = (async () => {
+      // Stop accepting HTTP work even if process termination cannot be confirmed.
+      if (server.listening) {
+        const stopped = new Promise<void>((resolve, reject) =>
+          server.close((error) => (error ? reject(error) : resolve())),
+        );
+        server.closeAllConnections();
+        await stopped;
+      }
+      await stopWorker();
+      if (!poolEnded) {
+        await pool.end();
+        poolEnded = true;
+      }
+      await dropSchema(options.databaseUrl, schema);
+      closed = true;
+    })().finally(() => {
+      closeInProgress = undefined;
+    });
+    return closeInProgress;
   }
 
   try {
